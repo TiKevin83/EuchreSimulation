@@ -214,7 +214,7 @@ const simulatePlayerPlayTrick = (playerSeat: number) => {
     cardIdentifier = "None";
   }
   cardValueCounts.find((cardValueCount) => cardValueCount.card === cardIdentifier)!.playedCount++;
-  euchreGame.trick.cards.push({ rank: cardToPlay.rank, suit: cardToPlay.suit, value: cardIdentifier });
+  euchreGame.trick.cards.push({ rank: cardToPlay.rank, suit: cardToPlay.suit, value: cardIdentifier, player: playerSeat });
   euchreGame.roundUnknownCards.splice(euchreGame.roundUnknownCards.findIndex((card) => card.suit === cardToPlay.suit && card.rank === cardToPlay.rank), 1);
   euchreGame.players.find((player) => player.seat === playerSeat)!.hand = newPlayerHand;
   euchreGame.turn = ((euchreGame.turn ?? 1) % 4) + 1;

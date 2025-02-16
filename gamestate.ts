@@ -19,6 +19,23 @@ export const RankValues = {
   JackTrump: 13,
 } as const;
 
+export const EstimatedRankValues = {
+  None: 0,
+  Nine: .02754,
+  Ten: .05086,
+  Jack: .09659,
+  Queen: .19607,
+  King: .39910,
+  Ace: .72050,
+  NineTrump: .27270,
+  TenTrump: .29242,
+  QueenTrump: .32882,
+  KingTrump: .39150,
+  AceTrump: .46907,
+  LeftBauerTrump: .76092,
+  JackTrump: 1,
+} as const;
+
 type Phase = "PassPickup" | "CallSuit" | "PlayTrick";
 
 export interface Card {
@@ -32,12 +49,13 @@ export interface Player {
   seat: number;
 }
 
-export interface CardWithValue extends Card {
+export interface CardWithValueAndPlayer extends Card {
+  player: number;
   value: keyof typeof RankValues;
 }
 
 export interface Trick {
-  cards: CardWithValue[];
+  cards: CardWithValueAndPlayer[];
   leadSuit: typeof Suits[number] | null;
 }
 

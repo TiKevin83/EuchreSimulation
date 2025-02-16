@@ -1,12 +1,24 @@
-import { EuchreGame, Ranks, RankValues, Suits, Card } from "./gamestate.ts";
+import { EuchreGame, Ranks, RankValues, Suits, Card, EstimatedRankValues } from "./gamestate.ts";
 
-const cardValueCounts = Array.from(Object.keys(RankValues)).map((card) => {
+const cardTypes = Array.from(Object.keys(RankValues) as (keyof typeof RankValues)[])
+
+const cardValueCounts = cardTypes.map((card) => {
   return {
     card,
+    previousEstimate: EstimatedRankValues[card],
     playedCount: 0,
     wonCount: 0,
   };
 });
+
+const dealerMustPickTrumpAloneHeuristic: number[] = [];
+const dealermustPickTrumpAloneCounts: number[] = [];
+const dealerMustPickTrumpTwoSuitedHeuristic: number[] = [];
+const dealermustPickTrumpTwoSuitedCounts: number[] = [];
+const dealerMustPickTrumpThreeSuitedHeuristic: number[] = [];
+const dealermustPickTrumpThreeSuitedCounts: number[] = [];
+const dealerMustPickTrumpFourSuitedHeuristic: number[] = [];
+const dealermustPickTrumpFourSuitedCounts: number[] = [];
 
 const euchreGame: EuchreGame = {
   players: [
@@ -23,20 +35,27 @@ const euchreGame: EuchreGame = {
   leadPlayer: 2,
   suitCaller: null,
   suitCallerIsAlone: false,
-  phase: "PlayTrick",
-  turn: null,
+  phase: "PassPickup",
+  turn: 2,
   trick: { cards: [], leadSuit: null },
   roundUnknownCards: Suits.flatMap((suit) => Ranks.map((rank) => ({ suit, rank }))),
   roundScore: [0, 0],
   gameScore: [0, 0],
 };
 
-const simulateDeal = () => {
-  const shuffledDeck = Suits.flatMap((suit) => Ranks.map((rank) => ({ suit, rank }))).sort(() => Math.random() - 0.5);
-  euchreGame.players.forEach((player, j) => {
-    player.hand = shuffledDeck.slice(j * 5, (j + 1) * 5);
-  });
-  euchreGame.trump = Suits[Math.floor(Math.random() * 4)];
+const getLeftBauerTrumpSuit = (trumpSuit: typeof Suits[number]) => {
+  if (trumpSuit === "Spades") {
+    return "Clubs";
+  } else if (trumpSuit === "Hearts") {
+    return "Diamonds";
+  } else if (trumpSuit === "Clubs") {
+    return "Spades";
+  } else {
+    return "Hearts";
+  }
+}
+
+const setLeftBauerTrumpSuit = () => {
   if (euchreGame.trump === "Spades") {
     euchreGame.leftBauerTrumpSuit = "Clubs";
   } else if (euchreGame.trump === "Hearts") {
@@ -46,9 +65,18 @@ const simulateDeal = () => {
   } else {
     euchreGame.leftBauerTrumpSuit = "Hearts";
   }
+}
+
+const simulateDeal = () => {
+  const shuffledDeck = Suits.flatMap((suit) => Ranks.map((rank) => ({ suit, rank }))).sort(() => Math.random() - 0.5);
+  euchreGame.players.forEach((player, j) => {
+    player.hand = shuffledDeck.slice(j * 5, (j + 1) * 5);
+  });
+  euchreGame.upCard = shuffledDeck[20];
+  euchreGame.trump = null;
   const newDealerSeat = Math.floor(Math.random() * 4) + 1;
   euchreGame.dealer = newDealerSeat;
-  euchreGame.leadPlayer = newDealerSeat % 4 + 1;
+  euchreGame.leadPlayer = (newDealerSeat % 4) + 1;
   euchreGame.turn = euchreGame.leadPlayer;
   euchreGame.trick = { cards: [], leadSuit: null };
 };
@@ -214,24 +242,29 @@ const simulatePlayerPlayTrick = (playerSeat: number) => {
     cardIdentifier = "None";
   }
   cardValueCounts.find((cardValueCount) => cardValueCount.card === cardIdentifier)!.playedCount++;
-  euchreGame.trick.cards.push({ rank: cardToPlay.rank, suit: cardToPlay.suit, value: cardIdentifier });
+  euchreGame.trick.cards.push({ rank: cardToPlay.rank, suit: cardToPlay.suit, value: cardIdentifier, player: playerSeat });
   euchreGame.roundUnknownCards.splice(euchreGame.roundUnknownCards.findIndex((card) => card.suit === cardToPlay.suit && card.rank === cardToPlay.rank), 1);
   euchreGame.players.find((player) => player.seat === playerSeat)!.hand = newPlayerHand;
-  euchreGame.turn = ((euchreGame.turn ?? 1) % 4) + 1;
+  euchreGame.turn = (euchreGame.turn! % 4) + 1;
+  if (euchreGame.suitCallerIsAlone) {
+    if (euchreGame.turn === ((euchreGame.suitCaller! + 1) % 4) + 1) {
+      euchreGame.turn = (euchreGame.turn % 4) + 1;
+    }
+  }
 }
 
 const simulateTrick = () => {
-  /* console.log("player hands: ", euchreGame.players.map(player => player.hand)); */
+  // console.log("player hands: ", euchreGame.players.map(player => player.hand));
 
-  for (let i = 0; i < 4; i++) {
-    simulatePlayerPlayTrick(euchreGame.players.find((player) => player.seat === euchreGame.turn)!.seat);
+  for (let i = 0; i < (euchreGame.suitCallerIsAlone ? 3 : 4); i++) {
+    if (!euchreGame.suitCallerIsAlone || (euchreGame.suitCallerIsAlone && euchreGame.turn !== (((euchreGame.suitCaller! + 1) % 4) + 1))) {
+      simulatePlayerPlayTrick(euchreGame.players.find((player) => player.seat === euchreGame.turn)!.seat);
+    }
   }
-
 
   const winningCard = euchreGame.trick.cards.reduce((prev, curr) => {
     return RankValues[prev.value] > RankValues[curr.value] ? prev : curr;
   });
-  const winningCardIndex = euchreGame.trick.cards.findIndex((card) => card.suit === winningCard.suit && card.rank === winningCard.rank);
 
   // debug logs for hand logic
   /* console.log("lead suit: ", euchreGame.trick.cards[0].suit);
@@ -239,32 +272,128 @@ const simulateTrick = () => {
   console.log("played cards: ", euchreGame.trick.cards);
   console.log("winning card: ", winningCard); */
 
-  const winningCardSeat = ((euchreGame.leadPlayer + winningCardIndex - 1) % 4) + 1;
+  const winningCardSeat = winningCard.player;
   cardValueCounts.find((cardValueCount) => cardValueCount.card === winningCard.value)!.wonCount++;
+  euchreGame.roundScore[winningCardSeat === 1 || winningCardSeat === 3 ? 0 : 1]++;
   euchreGame.leadPlayer = winningCardSeat;
   euchreGame.turn = winningCardSeat;
   euchreGame.trick = { cards: [], leadSuit: null };
 }
 
-const simulateRound = () => {
-  while (euchreGame.players[0].hand.length > 0) {
+const simulateRound = (callerHandValueEstimate: number, callerHandSuitCount: number) => {
+  while ((euchreGame.roundScore[0] + euchreGame.roundScore[1]) < 5) {
     simulateTrick();
   }
+  let teamZeroPointsAdded = 0;
+  let teamOnePointsAdded = 0;
+  if (euchreGame.suitCaller === 1 || euchreGame.suitCaller === 3) {
+    if (euchreGame.roundScore[0] === 5) {
+      if (euchreGame.suitCallerIsAlone) {
+        teamZeroPointsAdded == 4;
+      } else {
+        teamZeroPointsAdded == 2;
+      }
+    } else {
+      if (euchreGame.roundScore[0] >= 3) {
+        teamZeroPointsAdded++;
+      } else {
+        teamOnePointsAdded = 2;
+      }
+    }
+  } else {
+    if (euchreGame.roundScore[1] === 5) {
+      if (euchreGame.suitCallerIsAlone) {
+        teamOnePointsAdded == 4;
+      } else {
+        teamOnePointsAdded == 2;
+      }
+    } else {
+      if (euchreGame.roundScore[1] >= 3) {
+        teamOnePointsAdded++;
+      } else {
+        teamZeroPointsAdded = 2;
+      }
+    }
+  }
+  euchreGame.gameScore[0] += teamZeroPointsAdded;
+  euchreGame.gameScore[1] += teamOnePointsAdded;
+  if (euchreGame.suitCaller === euchreGame.dealer) {
+    const relativePointsGained = euchreGame.dealer === 1 || euchreGame.dealer === 3 ? teamZeroPointsAdded - teamOnePointsAdded : teamOnePointsAdded - teamZeroPointsAdded;
+    const suitHueristicIndex = Math.round(callerHandValueEstimate * 10);
+    if (euchreGame.suitCallerIsAlone) {
+      dealerMustPickTrumpAloneHeuristic[suitHueristicIndex] = (dealerMustPickTrumpAloneHeuristic[suitHueristicIndex] ?? 0) + relativePointsGained;
+      dealermustPickTrumpAloneCounts[suitHueristicIndex] = (dealermustPickTrumpAloneCounts[suitHueristicIndex] ?? 0) + 1;
+    } else if (callerHandSuitCount === 2) {
+      dealerMustPickTrumpTwoSuitedHeuristic[suitHueristicIndex] = (dealerMustPickTrumpTwoSuitedHeuristic[suitHueristicIndex] ?? 0) + relativePointsGained;
+      dealermustPickTrumpTwoSuitedCounts[suitHueristicIndex] = (dealermustPickTrumpTwoSuitedCounts[suitHueristicIndex] ?? 0) + 1;
+    } else if (callerHandSuitCount === 3) {
+      dealerMustPickTrumpThreeSuitedHeuristic[suitHueristicIndex] = (dealerMustPickTrumpThreeSuitedHeuristic[suitHueristicIndex] ?? 0) + relativePointsGained;
+      dealermustPickTrumpThreeSuitedCounts[suitHueristicIndex] = (dealermustPickTrumpThreeSuitedCounts[suitHueristicIndex] ?? 0) + 1;
+    } else if (callerHandSuitCount === 4) {
+      dealerMustPickTrumpFourSuitedHeuristic[suitHueristicIndex] = (dealerMustPickTrumpFourSuitedHeuristic[suitHueristicIndex] ?? 0) + relativePointsGained;
+      dealermustPickTrumpFourSuitedCounts[suitHueristicIndex] = (dealermustPickTrumpFourSuitedCounts[suitHueristicIndex] ?? 0) + 1;
+    }
+  }
+  // reset round state
   euchreGame.roundUnknownCards = Suits.flatMap((suit) => Ranks.map((rank) => ({ suit, rank })));
+  euchreGame.roundScore = [0, 0];
+}
+
+const isCardValueIncreasedByKnowledge = (hand: Card[], card: Card, proposedSuit: typeof Suits[number]) => {
+  if (card.suit === proposedSuit) {
+    if (hand.some((handCard) => handCard.suit === proposedSuit && handCard.rank === "Jack") && hand.some((handCard) => handCard.suit === getLeftBauerTrumpSuit(proposedSuit) && handCard.rank === "Jack")) {
+      return true;
+    }
+  }
+  if (card.suit === getLeftBauerTrumpSuit(proposedSuit) && card.rank === "Jack") {
+    if (hand.some((handCard) => handCard.suit === euchreGame.trump && handCard.rank === "Jack")) {
+      return true;
+    }
+  }
+}
+
+const estimateHandValue = (hand: Card[], proposedSuit: typeof Suits[number]) => {
+  let handValue = 0;
+  hand.forEach((card) => {
+    let cardValue: keyof typeof RankValues = card.rank;
+    if (card.suit === proposedSuit) {
+      cardValue = `${card.rank}Trump`;
+    }
+    if (card.suit === getLeftBauerTrumpSuit(proposedSuit) && card.rank === "Jack") {
+      cardValue = "LeftBauerTrump";
+    }
+    handValue += isCardValueIncreasedByKnowledge(hand, card, proposedSuit) ? 1 : EstimatedRankValues[cardValue];
+  });
+  return handValue;
+}
+
+const simulateTrumpSelection = () => {
+  // dealer must pick trump
+  const dealerHand = euchreGame.players.find((player) => player.seat === euchreGame.dealer)!.hand;
+  const dealerHandValuesPerSuit = Suits.map((suit) => ({value: estimateHandValue(dealerHand, suit), suit}));
+  const highestValueTrumpSuit = dealerHandValuesPerSuit.reduce((prev, curr) => {
+    return prev.value > curr.value ? prev : curr;
+  });
+  euchreGame.trump = highestValueTrumpSuit.suit;
+  setLeftBauerTrumpSuit();
+  euchreGame.suitCaller = euchreGame.dealer;
+  euchreGame.suitCallerIsAlone = Math.random() > 0.5;
+  return {callerHandValueEstimate: highestValueTrumpSuit.value, callerSuitCount: Suits.map((suit) => dealerHand.filter((card) => card.suit === suit).length).filter((count) => count > 0).length};
 }
 
 const numberOfGames = 10000000;
 
 for (let i = 0; i < numberOfGames; i++) {
   simulateDeal();
-  simulateRound();
+  const {callerHandValueEstimate, callerSuitCount } = simulateTrumpSelection();
+  simulateRound(callerHandValueEstimate, callerSuitCount);
 }
 
-console.log(JSON.stringify(cardValueCounts.map(card => {
-  return {
-    card: card.card,
-    count: card.wonCount / card.playedCount
-  }
-}), null, 2));
-
-// TODO: Implement pass/play simulation
+console.log("win counts when called alone per hand value estimate: ");
+console.log(JSON.stringify(dealerMustPickTrumpAloneHeuristic.map((value, index) => `${index} ${value / dealermustPickTrumpAloneCounts[index]}`), null, 2));
+console.log("win counts when called two suited per hand value estimate: ");
+console.log(JSON.stringify(dealerMustPickTrumpTwoSuitedHeuristic.map((value, index) => `${index} ${value / dealermustPickTrumpTwoSuitedCounts[index]})`), null, 2));
+console.log("win counts when called three suited per hand value estimate: ");
+console.log(JSON.stringify(dealerMustPickTrumpThreeSuitedHeuristic.map((value, index) => `${index} ${value / dealermustPickTrumpThreeSuitedCounts[index]}`), null, 2));
+console.log("win counts when called four suited per hand value estimate: ");
+console.log(JSON.stringify(dealerMustPickTrumpFourSuitedHeuristic.map((value, index) => `${index} ${value / dealermustPickTrumpFourSuitedCounts[index]}`), null, 2));
