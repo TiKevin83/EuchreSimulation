@@ -1,0 +1,24 @@
+{
+  "hand": [{
+    "rank": "Ace",
+    "suit": "Spades"
+  }, {
+    "rank": "Ace",
+    "suit": "Hearts"
+  }, {
+    "rank": "Ace",
+    "suit": "Clubs"
+  }, {
+    "rank": "King",
+    "suit": "Spades"
+  }, {
+    "rank": "King",
+    "suit": "Hearts"
+  }],
+  "dealerUpCard": {
+    "rank": "Ace",
+    "suit": "Diamonds"
+  },
+  "dealerSeat": 1,
+  "playerSeat": 2
+}
